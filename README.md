@@ -40,8 +40,8 @@ To communicate with the device or recover it, you need a wired data connection t
 
 | Physical Unit Variant | Connection Location | Required Cable | Instructions |
 |---|---|---|---|
-| **Exposed Port** (Developer / Service Units) | Port on the bottom recess / base of the speaker housing | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Plug directly into the base. Ensure it is a 4-wire data cable, not a charge-only cable. |
-| **Enclosed Housing** (Standard Retail Units) | Internal PCB service socket (under bottom rubber foot) | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Peel back the bottom rubber ring and remove the 4 Phillips screws. The physical Micro-USB service receptacle is soldered directly on the lower interface board. |
+| **Exposed Port at Bottom** (Developer and SOME Retails Units) | Port on the bottom recess / base of the speaker housing | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Plug directly into the base. Ensure it is a 4-wire data cable, not a charge-only cable. |
+| **Port Behind Rubber Cover at Bottom** (Other Retail Units) | Internal PCB service socket (under bottom rubber foot) | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Peel back the bottom rubber ring and remove the 4 Phillips screws. The physical Micro-USB service receptacle is soldered directly on the lower interface board. |
 | **Unpopulated Header** *(Rare manufacturing variants)* | 4-pin USB test pads / header on the PCB (`VBUS`, `D-`, `D+`, `GND`) | **USB-A to 4-pin DuPont jumper cable** (or spliced USB 2.0 cable) | Connect `VBUS` (5V Red), `D-` (White), `D+` (Green), and `GND` (Black) directly to a standard USB port. |
 
 > [!TIP]
