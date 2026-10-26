@@ -1,10 +1,10 @@
-# WK7 Speaker REFORGED – New Custom Software for Some Models
+# WK7 Speaker REFORGED (v1.5) – New Custom Software for Some Models
 
 <p align="center">
   <img src="web-assets/WK7-Reforged-Powerup.jpg" alt="WK7 Speaker Reforged" width="480" />
 </p>
 
-A lightweight, non-destructive firmware and software stack that brings the **LG WK7 ThinQ** smart speaker back to life as a modern, local-first streaming audio endpoint.
+A lightweight, non-destructive firmware and software stack (**v1.5** — see [Changelog](#changelog-v15)) that brings the **LG WK7 ThinQ** smart speaker back to life as a modern, local-first streaming audio endpoint.
 
 ---
 
@@ -36,22 +36,69 @@ Despite its exceptional acoustic engineering, tight coupling to proprietary clou
 
 ### Hardware Connection & Required Cables
 
-To communicate with the device or recover it, you need a wired data connection to a PC/Mac:
+To communicate with the device or recover it, you need either a wired USB connection or a local Wi-Fi ADB connection from a PC/Mac:
 
 | Physical Unit Variant | Connection Location | Required Cable | Instructions |
 |---|---|---|---|
-| **Exposed Port at Bottom** (Developer and SOME Retails Units) | Port on the bottom recess / base of the speaker housing | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Plug directly into the base. Ensure it is a 4-wire data cable, not a charge-only cable. |
+| **Exposed Port at Bottom** (Developer and Some Retail Units) | Port on the bottom recess / base of the speaker housing (often under a `"SERVICE ONLY"` sticker next to `DC IN` and `RESET`) | **Standard Micro-USB data cable** (or see 3 connection methods below for retail `"SERVICE ONLY"` units) | Plug directly into the base. Prototype (`EV`/`DV`) boards route USB to this port by default at boot; retail (`MP`) boards route USB to internal Wi-Fi by default—see below to connect. |
 | **Port Behind Rubber Cover at Bottom** (Other Retail Units) | Internal PCB service socket (under bottom rubber foot) | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Peel back the bottom rubber ring and remove the 4 Phillips screws. The physical Micro-USB service receptacle is soldered directly on the lower interface board. |
 | **Unpopulated Header** *(Rare manufacturing variants)* | 4-pin USB test pads / header on the PCB (`VBUS`, `D-`, `D+`, `GND`) | **USB-A to 4-pin DuPont jumper cable** (or spliced USB 2.0 cable) | Connect `VBUS` (5V Red), `D-` (White), `D+` (Green), and `GND` (Black) directly to a standard USB port. |
 
 > [!TIP]
-> **Use a rear motherboard USB port**: When connecting to your PC/Mac, always use a port directly on the motherboard (rear of desktop) rather than an unpowered front-panel port, monitor hub, or USB dock. Front-panel hubs frequently fail the low-level Qualcomm USB handshake.
+> **Use a rear motherboard USB port**: When connecting via USB to your PC/Mac, always use a port directly on the motherboard (rear of desktop) rather than an unpowered front-panel port, monitor hub, or USB dock. Front-panel hubs frequently fail the low-level Qualcomm USB handshake.
+
+---
+
+### Why Retail Speakers Don't Show Up on USB by Default (And How to Connect)
+
+If you peeled off the **`"SERVICE ONLY"`** sticker on a retail WK7, plugged in a Micro-USB data cable, and your computer sees **nothing at all** (`lsusb`, `dmesg`, Device Manager, and `adb devices` completely blank), **your cable and port are not broken**:
+
+* **Single USB Controller + Hardware Switch**: The Qualcomm APQ8009 SoC has only **one** USB 2.0 controller (`msm_otg 78d9000.usb`), shared via a hardware analog mux controlled by the onboard **Renesas RL78 MICOM microcontroller** (`M17111305_DV_USB_Mode.hex` — see [`MICOM_PROTOCOL.md`](WK7-software-for-unlocked-bootloader/wk7-probe/MICOM_PROTOCOL.md)) between:
+  1. The **internal Wi-Fi/Bluetooth USB hub** (`05e3:0610` $\rightarrow$ Qualcomm QCA9377), and
+  2. The **bottom `"SERVICE ONLY"` Micro-USB socket** (`05c6:901d`).
+* **Prototype (`DV`) vs. Retail (`MP`) Boot Default**: At cold power-on, MICOM routine `0x9C7D` reads a hardware board-revision resistor divider on ADC channel `ANI2` (`0xF766`). On **prototype (`EV`/`DV`) boards** (`0xF766 = 1` or `2`), routine `0x50C7` defaults the USB switch to the **external Micro-USB port** at boot. On **retail (`MP`/`PV`) boards** (`0xF766 = 0` or `3`), it defaults the USB switch to the **internal Wi-Fi/BT hub** at boot—leaving the external Micro-USB port electrically disconnected from the SoC.
+
+Try these **three methods in order** (the first two require **no new equipment**, and include helper scripts in [`scripts/`](scripts/)):
+
+#### 1. Press the Physical `Mic Mute` Button After Boot *(No new equipment)*
+In the MICOM firmware (`M17111305_DV_USB_Mode.hex` at `0x5171` $\rightarrow$ `0x5335` $\rightarrow$ `0x5183`), when running on an `MP` (`0`) or `PV` (`3`) board, the 1 ms main loop monitors pin **`P2.7` (the physical Microphone Mute button on the top panel)** with a 91 ms debounce. Pressing it toggles the hardware USB mux to the external Micro-USB socket (`0x542B`) and plays LED animation `0x89A6`.
+1. Start the live USB/ADB/Fastboot monitor script on your computer (macOS or Linux):
+   ```bash
+   ./scripts/monitor-usb-adb.sh
+   ```
+2. Plug your Micro-USB data cable into the speaker and a rear motherboard USB port on your computer, then plug in DC power.
+3. Wait ~10–30 seconds for the speaker to power up, then press the physical **Mic Mute** button on top of the speaker once. If the speaker enumerates over USB, [`monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh) will automatically detect it and print its bootloader lock status.
+
+#### 2. Connect via ADB over Wi-Fi (`TCP:5555`) *(No new equipment)*
+Because retail units keep the USB mux routed to the internal Wi-Fi module at boot, **Wi-Fi is active**, and stock `/system/build.prop` compiles in `persist.adb.tcp.port=5555` by default. You can use [`./scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) to automatically discover the speaker, verify its identity, check bootloader status, and optionally flip the hardware USB switch:
+* **If your speaker was NEVER factory-reset:** Even though Google Assistant is dead, Android's `wpa_supplicant` still connects automatically to your saved home Wi-Fi network at boot. Run the Wi-Fi discovery/probe script (or pass the speaker's IP from your router's DHCP table):
+  ```bash
+  ./scripts/connect-wifi-adb.sh
+  # or with a known IP:
+  ./scripts/connect-wifi-adb.sh <speaker-lan-ip>
+  ```
+* **If your speaker WAS factory-reset (most common):** Holding the bottom `RESET` button wipes saved Wi-Fi credentials, so the speaker will not join your home router automatically. Instead:
+  1. **Direct Setup Hotspot (`192.168.255.249`):** When unconfigured (or after holding the **`F` / Wi-Fi** button), `Cast.java` (`SSID_SUFFFIX = "n019"`) broadcasts an open setup Wi-Fi hotspot from the speaker itself (typically named `LG_WK7_xxxx.n019` or `WK7xxxx.n019`). Connect your computer's Wi-Fi directly to that open hotspot—where the speaker's IP is **`192.168.255.249`**—and run:
+     ```bash
+     ./scripts/connect-wifi-adb.sh 192.168.255.249
+     ```
+  2. **Partial Google Home Provisioning:** When the Google Home app fails to set up a WK7 today, it usually succeeds at Step 1 (sending your home Wi-Fi SSID/password to `192.168.255.249:8008/setup/connect_wifi`) before failing at Step 2 (Google Assistant cloud linking)—meaning the speaker often joins your home Wi-Fi LAN even though the Google Home app reports an error.
+* **Flipping the Hardware USB Switch in Software (`--switch-usb`):** Once connected over Wi-Fi ADB, if `adb root` succeeds, you can flip the hardware USB switch to the bottom Micro-USB port by passing `--switch-usb` (which sends MICOM UART command `0xC2 0x00 0x00` to `/dev/ttyHSL1`):
+  ```bash
+  ./scripts/connect-wifi-adb.sh <speaker-ip> --switch-usb
+  ```
+  *(Note: [`connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) also checks Google Cast port `8008` first—so if port `8008` responds on Wi-Fi while port `5555` returns `Connection refused`, the script will confirm that your retail unit is online on Wi-Fi but running a locked consumer `user` build where `adbd` is disabled in Android init.)*
+
+#### 3. Connector Depth & LG Service Cable / Micro-USB OTG Adapter (`Pin 4 ID -> GND`) *`[Requires new cable]`*
+If neither Method 1 nor Method 2 works, triggering the external Micro-USB port in hardware on a retail (`MP`) board requires addressing two physical constraints of the `"SERVICE ONLY"` port (keep [`./scripts/monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh) running while testing):
+1. **Pulling Micro-USB Pin 4 (`ID` / `ANI5`) Low (`[Requires new cable / OTG adapter]`):** Every 10 ms on retail (`MP`, `0xF766 = 0`) boards, MICOM routine `0x9C03` samples ADC channel **`ANI5` (`P2.5`)**. When floating ($\ge 1.0\text{ V}$, `>= 0x0136`), it forces the USB mux to internal Wi-Fi (`0x5438`). Only when pulled low ($< 1.0\text{ V}$ to `GND`) does it switch the hardware mux to the external `"SERVICE ONLY"` Micro-USB socket (`0x542B`). Standard 4-wire USB-A-to-Micro-USB cables leave **Pin 4 (`ID`)** unconnected (floating). To pull Pin 4 low at power-on, you need an **LG Factory Service Cable** (or a **5-pin Micro-USB OTG adapter / breakout** that ties **Pin 4 `ID` to Pin 5 `GND`**).
+2. **Recessed Plastic Cutout (~3–4 mm deep, `[Requires long-tip plug or trimmed boot]`):** The metal Micro-USB receptacle behind the `"SERVICE ONLY"` sticker sits ~3–4 mm deep inside the molded plastic housing. Standard Micro-USB plugs with thick plastic/rubber shoulders bottom out against the plastic cutout before the 5 pins engage—requiring either a **long-tip (7–8 mm) Micro-USB connector** or paring ~2 mm of rubber molding off the shoulder of the plug.
 
 ---
 
 ### Verifying Bootloader Lock Status
 
-With the speaker connected and powered on, run:
+Once connected (over Wi-Fi ADB or wired USB), run:
 
 ```bash
 adb shell getprop ro.boot.vbmeta.device_state
@@ -219,16 +266,18 @@ To make the speaker boot automatically into WK7 Reforged without needing a compu
 
 ### Computer Fails to Detect Speaker over USB
 
-The LG WK7 utilizes an internal MICOM microcontroller to switch its single physical USB controller between the external mini-USB socket and the internal Wi-Fi/Bluetooth hub.
+The LG WK7 uses an internal Renesas RL78 MICOM microcontroller to switch its single physical USB controller between the external Micro-USB socket and the internal Wi-Fi/Bluetooth hub.
 
+0. **Stock Retail Units (`"SERVICE ONLY"` Port)**:
+   - On unmodified retail (`MP`) units, the MICOM defaults its hardware USB switch to the **internal Wi-Fi/BT hub** at power-on instead of the external Micro-USB port. Follow the 3 steps in [Why Retail Speakers Don't Show Up on USB by Default (And How to Connect)](#why-retail-speakers-dont-show-up-on-usb-by-default-and-how-to-connect) above (1. `Mic Mute` button toggle, 2. Wi-Fi ADB on `:5555`, or 3. `[Requires new cable]` long-tip OTG / LG Service cable).
 1. **Use Direct Motherboard Ports**:
-   - Plug the mini-USB cable directly into a **rear motherboard USB port** on your computer.
+   - Plug the Micro-USB cable directly into a **rear motherboard USB port** on your computer.
    - Avoid front-panel ports, external USB hubs, keyboard passthroughs, and laptop docks. Front ports and hubs frequently drop packets during the initial USB negotiation handshake.
-2. **Boot Handshake Timing**:
+2. **Boot Handshake Timing (Prototype / Already-Flashed Slot B Units)**:
    - Power-cycle the speaker with the USB cable **already plugged in**.
-   - The boot script allows approximately 38–60 seconds for an active USB host handshake (`android_usb CONFIGURED`). If no computer establishes communication within this window, the controller permanently routes the USB port to the internal Wi-Fi module.
+   - On Slot B (`wk7-usbroute`), the boot script allows approximately 38–60 seconds for an active USB host handshake (`android_usb CONFIGURED`). If no computer establishes communication within this window, the controller routes the USB port to the internal Wi-Fi module.
 3. **Cable Quality**:
-   - Ensure the cable is a high-grade data cable. Many micro/mini-USB cables are charge-only and lack D+/D- lines.
+   - Ensure the cable is a 4-wire data cable. Many Micro-USB cables are charge-only and lack `D+`/`D-` lines.
 4. **Linux USB Permissions (`udev`)**:
    - If `adb devices` shows the device as `no permissions`, create `/etc/udev/rules.d/51-android.rules`:
      ```udev
@@ -381,7 +430,11 @@ Practical options:
 
 ```
 ├── .gitignore                                  # Allowlist configuration (excludes firmware dumps/blobs)
+├── CHANGELOG.md                                # Version history and release notes (v1.5)
 ├── README.md                                   # Project overview and hardware reference
+├── scripts/                                    # Cross-platform connection & diagnostic helpers
+│   ├── monitor-usb-adb.sh                      # Live USB bus, ADB, and Fastboot connection monitor
+│   └── connect-wifi-adb.sh                     # Wi-Fi discovery (Setup AP / LAN), ADB probe & USB switcher
 ├── web-assets/                                 # Documentation imagery and visual assets
 │   ├── timeline.png                            # Historical timeline infographic
 │   ├── timeline.svg                            # Vector source for timeline
@@ -427,6 +480,19 @@ Practical options:
     ├── wk7-moode/                              # moOde receiver integration scripts
     └── wk7-probe/                              # Hardware probe documentation & MICOM serial protocol
 ```
+
+---
+
+## Changelog (v1.5)
+
+* **Retail (`MP`) vs. Prototype (`DV`) USB Mux Root-Cause Fix ([Issue #4](https://github.com/tomkubik/WK7-reforged/issues/4))**: Disassembled the Renesas RL78 MICOM firmware (`M17111305_DV_USB_Mode.hex`) and documented why retail (`MP`/`PV`) units keep the `"SERVICE ONLY"` Micro-USB port disconnected at power-on (routing the single USB controller to the internal Wi-Fi/BT hub instead), along with 3 ordered connection methods:
+  1. Physical **`Mic Mute` button toggle** (`P2.7`, routine `0x5335`) after boot *(no new equipment)*.
+  2. **ADB over Wi-Fi (`TCP:5555`)** via home LAN or the factory-reset Setup Hotspot (`192.168.255.249` on `LG_WK7_xxxx.n019`) + software USB switch via MICOM UART command `0xC2 0x00 0x00` *(no new equipment)*.
+  3. **Micro-USB Pin 4 (`ID` / `ANI5`) sense (`0x9C03`) & recessed connector depth** using an LG Factory Service cable / OTG adapter and long-tip plug *(`[Requires new cable]`)*.
+* **New Connection & Monitoring Scripts ([`scripts/`](scripts/))**:
+  - [`scripts/monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh): Live macOS/Linux USB bus, ADB, and Fastboot monitor that auto-detects the speaker and prints bootloader unlock state.
+  - [`scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh): Auto-discovers the speaker on the Setup Hotspot (`192.168.255.249`) or local LAN (`:8008`), probes Wi-Fi ADB (`:5555`) with `ro.product.model` verification, diagnoses locked `user` builds, and supports `--switch-usb`.
+* **Expanded Documentation**: Added the hardware connection & cable reference table, the unlocked-bootloader deployment walkthrough, and detailed experimental locked-bootloader documentation. See [`CHANGELOG.md`](CHANGELOG.md) for full details.
 
 <p align="center">
   <img src="web-assets/WK7-Reforged.jpeg" alt="WK7 Speaker Reforged" width="480" />
