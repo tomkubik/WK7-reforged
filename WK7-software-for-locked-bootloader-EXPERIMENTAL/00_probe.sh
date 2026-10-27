@@ -24,12 +24,18 @@ if [[ "$MODE" == fastboot ]]; then
     printf '  %-18s %s\n' "$v" "$(timeout 10 fastboot getvar "$v" 2>&1 | sed 's/.*: //')"
   done
   echo
-  echo "--- ATX authenticated-unlock probe ---"
-  if timeout 15 fastboot oem at-get-vboot-unlock-challenge 2>&1 | tee "$STATE_DIR/atx_challenge.txt" | grep -qiE "version|product|challenge|0x"; then
-    ok "ATX challenge endpoint ALIVE -- authenticated unlock is implemented in this bootloader"
-    warn "you still need LG's PUK to mint unlock_credential.bin; the issuing console was deleted 2022-01-05"
+  echo "--- aboot device-info & vboot lock state ---"
+  {
+    timeout 10 fastboot oem device-info 2>&1
+    timeout 10 fastboot flashing get_unlock_ability 2>&1
+    timeout 10 fastboot getvar at-vboot-state 2>&1
+  } | tee "$STATE_DIR/fastboot_vboot.txt"
+  if grep -qiE "avb-unlock-disabled:[[:space:]]*(1|true|yes)" "$STATE_DIR/fastboot_vboot.txt"; then
+    warn "avb-unlock-disabled is set in RPMB -- fastboot unlock commands (including 'oem at-unlock-vboot default_credential') will be rejected"
+  elif grep -qiE "Device unlocked:[[:space:]]*true" "$STATE_DIR/fastboot_vboot.txt"; then
+    ok "bootloader reports Device unlocked: true"
   else
-    warn "no ATX challenge response -- bootloader has no authenticated-unlock path"
+    log "check $STATE_DIR/fastboot_vboot.txt (or run ../scripts/pcb-hardware-probe.sh --fastboot-probe)"
   fi
   timeout 20 fastboot reboot >/dev/null 2>&1
   echo "  (rebooting to Android)"

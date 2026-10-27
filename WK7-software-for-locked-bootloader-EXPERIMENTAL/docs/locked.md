@@ -13,6 +13,15 @@
 >
 > You would be the first person to try it. Back up first.
 
+> ### Update from Retail Hardware Testing ([Issue #4](https://github.com/tomkubik/WK7-reforged/issues/4) & [Issue #5](https://github.com/tomkubik/WK7-reforged/issues/5))
+>
+> Testing across multiple unopened retail (`MP`) speakers (`WK7.DDEULLK`, `WK7.DGBRLLK`, `WK7.DMEXLLK`) confirmed that **standard production retail units ship a `user` / `release-keys` Android build (`ro.debuggable=0`)**:
+> - **Wi-Fi ADB (`:5555`) is refused**, `/sys/class/android_usb/android0/enable` is set to `0` once Android boots, and the retail MICOM keeps the `IC502` USB switch routed to the internal Wi-Fi/BT hub (without the `DV` prototype `Mic Mute` toggle).
+> - **Unopened retail speakers**: Because `adb` is disabled, the `/data` installer below cannot run on standard retail firmware. However, local Google Cast (`:8008` / `:8443`) remains active and can be provisioned without disassembly or cloud servers using [`PaulVipond/wk7-speaker`](https://github.com/PaulVipond/wk7-speaker) (`provision-wifi.py`).
+> - **Opened retail PCBs (`EAX67850001_VER1.7 PV`)**: Disassembly of `aboot` shows Fastboot registers `oem device-info`, `getvar:at-vboot-state`, and `oem at-unlock-vboot default_credential`, but when Qualcomm Secure Boot is enabled `device_info` is stored in **RPMB** with `avb_unlock_disabled = 1` by default (which rejects Fastboot unlock commands). To read the `1.8V` `ttyHSL0` console (`TP514`/`TP515`), switch `IC502` on `R708` (`3.3V`), and probe Fastboot on an opened board, use [`../../scripts/pcb-hardware-probe.sh`](../../scripts/pcb-hardware-probe.sh).
+>
+> The `/data` installation workflow below remains applicable only if you have a locked unit that still runs a `userdebug` system image (`adb root` permitted) or obtain root through another vector.
+
 This folder sits **parallel to** `WK7-software-for-unlocked-bootloader/`. Nothing
 in the unlocked path is modified or duplicated; the two are independent.
 

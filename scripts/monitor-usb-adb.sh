@@ -18,12 +18,14 @@ echo -e "${BOLD}================================================================
 echo -e "${BOLD} LG WK7 — Live USB / ADB / Fastboot Connection Monitor${RESET}"
 echo -e "${BOLD}======================================================================${RESET}"
 echo ""
-echo -e "${CYAN}Instructions for Retail ('SERVICE ONLY' sticker) Units:${RESET}"
-echo "  1. Plug your Micro-USB data cable into the speaker base and a"
-echo "     rear motherboard USB port on your computer."
-echo "  2. Plug the 19V DC power cable into the speaker."
-echo "  3. Wait ~10–30 seconds, then press the physical ${BOLD}Mic Mute${RESET} button"
-echo "     on top of the speaker once (toggles MICOM pin P2.7 -> USB mode)."
+echo -e "${CYAN}Connection Notes:${RESET}"
+echo "  - Prototype / developer (EV/DV) & Slot B units enumerate directly on"
+echo "    Micro-USB at power-on (use a rear motherboard USB port, then plug 19V DC)."
+echo "  - Unopened retail (MP) units route USB to internal Wi-Fi and disable"
+echo "    android0/enable once Android boots. Check Wi-Fi first with:"
+echo "      ./scripts/connect-wifi-adb.sh"
+echo "  - Opened retail PCBs halted in Fastboot/EDL: switch IC502 over UART with:"
+echo "      ./scripts/pcb-hardware-probe.sh --switch-usb"
 echo ""
 echo "Watching USB bus, 'adb devices', and 'fastboot devices' (Ctrl+C to stop)..."
 echo "----------------------------------------------------------------------"
@@ -86,6 +88,13 @@ probe_fastboot_device() {
     val="$(fastboot -s "$serial" getvar "$var" 2>&1 | awk -F': ' '/^'"$var"':/ {print $2}' | tr -d '\r')"
     printf "  %-22s %s\n" "${var}:" "${val:-unknown}"
   done
+  echo ""
+  echo "  --- oem device-info ---"
+  fastboot -s "$serial" oem device-info 2>&1 | tr -d '\r' | sed 's/^/  /' || true
+  echo ""
+  echo "  --- at-vboot-state & unlock ability ---"
+  fastboot -s "$serial" flashing get_unlock_ability 2>&1 | tr -d '\r' | sed 's/^/  /' || true
+  fastboot -s "$serial" getvar at-vboot-state 2>&1 | tr -d '\r' | sed 's/^/  /' || true
   echo "----------------------------------------------------------------------"
 }
 

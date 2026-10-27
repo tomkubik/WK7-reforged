@@ -40,7 +40,7 @@ To communicate with the device or recover it, you need either a wired USB connec
 
 | Physical Unit Variant | Connection Location | Required Cable | Instructions |
 |---|---|---|---|
-| **Exposed Port at Bottom** (Developer and Some Retail Units) | Port on the bottom recess / base of the speaker housing (often under a `"SERVICE ONLY"` sticker next to `DC IN` and `RESET`) | **Standard Micro-USB data cable** (or see 3 connection methods below for retail `"SERVICE ONLY"` units) | Plug directly into the base. Prototype (`EV`/`DV`) boards route USB to this port by default at boot; retail (`MP`) boards route USB to internal Wi-Fi by default—see below to connect. |
+| **Exposed Port at Bottom** (Developer and Some Retail Units) | Port on the bottom recess / base of the speaker housing (often under a `"SERVICE ONLY"` sticker next to `DC IN` and `RESET`) | **Standard Micro-USB data cable** | Plug directly into the base. Prototype (`EV`/`DV`) boards enumerate here at boot; unopened retail (`MP`) boards keep USB routed to internal Wi-Fi and disable USB once Android boots—see below. |
 | **Port Behind Rubber Cover at Bottom** (Other Retail Units) | Internal PCB service socket (under bottom rubber foot) | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Peel back the bottom rubber ring and remove the 4 Phillips screws. The physical Micro-USB service receptacle is soldered directly on the lower interface board. |
 | **Unpopulated Header** *(Rare manufacturing variants)* | 4-pin USB test pads / header on the PCB (`VBUS`, `D-`, `D+`, `GND`) | **USB-A to 4-pin DuPont jumper cable** (or spliced USB 2.0 cable) | Connect `VBUS` (5V Red), `D-` (White), `D+` (Green), and `GND` (Black) directly to a standard USB port. |
 
@@ -49,63 +49,56 @@ To communicate with the device or recover it, you need either a wired USB connec
 
 ---
 
-### Why Retail Speakers Don't Show Up on USB by Default (And How to Connect)
+### Why Retail Speakers Don't Show Up on USB by Default (And What Works)
 
-If you peeled off the **`"SERVICE ONLY"`** sticker on a retail WK7, plugged in a Micro-USB data cable, and your computer sees **nothing at all** (`lsusb`, `dmesg`, Device Manager, and `adb devices` completely blank), **your cable and port are not broken**:
+If you peeled off the **`"SERVICE ONLY"`** sticker on a retail WK7, plugged in a Micro-USB data cable, and your computer sees **nothing at all** (`lsusb`, `dmesg`, Device Manager, and `adb devices` completely blank), **your cable and port are not broken**. Community testing across retail units (`WK7.DDEULLK`, `WK7.DGBRLLK`, `WK7.DMEXLLK`) and retail PCB inspection (`EAX67850001_VER1.7 PV`) confirmed two independent blockers on production (`MP`) hardware:
 
-* **Single USB Controller + Hardware Switch**: The Qualcomm APQ8009 SoC has only **one** USB 2.0 controller (`msm_otg 78d9000.usb`), shared via a hardware analog mux controlled by the onboard **Renesas RL78 MICOM microcontroller** (`M17111305_DV_USB_Mode.hex` — see [`MICOM_PROTOCOL.md`](WK7-software-for-unlocked-bootloader/wk7-probe/MICOM_PROTOCOL.md)) between:
-  1. The **internal Wi-Fi/Bluetooth USB hub** (`05e3:0610` $\rightarrow$ Qualcomm QCA9377), and
-  2. The **bottom `"SERVICE ONLY"` Micro-USB socket** (`05c6:901d`).
-* **Prototype (`DV`) vs. Retail (`MP`) Boot Default**: At cold power-on, MICOM routine `0x9C7D` reads a hardware board-revision resistor divider on ADC channel `ANI2` (`0xF766`). On **prototype (`EV`/`DV`) boards** (`0xF766 = 1` or `2`), routine `0x50C7` defaults the USB switch to the **external Micro-USB port** at boot. On **retail (`MP`/`PV`) boards** (`0xF766 = 0` or `3`), it defaults the USB switch to the **internal Wi-Fi/BT hub** at boot—leaving the external Micro-USB port electrically disconnected from the SoC.
+1. **Hardware USB Switch (`IC502`) Held on Internal Wi-Fi**: The Qualcomm APQ8009 SoC has only **one** USB 2.0 controller (`msm_otg 78d9000.usb`), shared via a 2:1 analog mux (`IC502`, marked `LHV`/`LMV`) controlled by the onboard **Renesas RL78 MICOM** (`IC700`, `100GEA` — see [`MICOM_PROTOCOL.md`](WK7-software-for-unlocked-bootloader/wk7-probe/MICOM_PROTOCOL.md)) between the **internal Wi-Fi/BT USB hub** (`GL852G` $\rightarrow$ `QCA9377`) and the **bottom `"SERVICE ONLY"` Micro-USB socket**. Prototype (`EV`/`DV`) firmware routes USB to the external port at boot and includes a `Mic Mute` button toggle (`0x5335`), whereas production retail (`MP`) MICOM firmware keeps `IC502` on internal Wi-Fi and omits the button toggle. (Note also that the `"SERVICE ONLY"` port sits ~3–4 mm recessed inside the plastic housing, so thick cable shoulders can bottom out early.)
+2. **Locked Retail Android `user` Build (`ro.debuggable=0` & `android0/enable = 0`)**: Production retail units ship a locked consumer `user` build where `adbd` is disabled (refusing Wi-Fi ADB on TCP `:5555`) and stock `/init.usb.rc` sets `sys.usb.config=none`, writing `0` to `/sys/class/android_usb/android0/enable`. Once Android boots, the APQ8009 turns off its USB `D+` pull-up—so even flipping `IC502` after boot will not enumerate on USB unless the board is halted earlier in **Fastboot (`18d1:d00d`)** or **Qualcomm EDL (`05c6:9008`)**.
 
-Try these **three methods in order** (the first two require **no new equipment**, and include helper scripts in [`scripts/`](scripts/)):
+#### A. Unopened Speakers (No Disassembly)
 
-#### 1. Press the Physical `Mic Mute` Button After Boot *(No new equipment)*
-In the MICOM firmware (`M17111305_DV_USB_Mode.hex` at `0x5171` $\rightarrow$ `0x5335` $\rightarrow$ `0x5183`), when running on an `MP` (`0`) or `PV` (`3`) board, the 1 ms main loop monitors pin **`P2.7` (the physical Microphone Mute button on the top panel)** with a 91 ms debounce. Pressing it toggles the hardware USB mux to the external Micro-USB socket (`0x542B`) and plays LED animation `0x89A6`.
-1. Start the live USB/ADB/Fastboot monitor script on your computer (macOS or Linux):
+1. **Check Wi-Fi ADB First (`TCP:5555`):** In case your unit runs a `userdebug`/developer build, run [`./scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) while the speaker is on your home LAN—or connect your computer's Wi-Fi to the speaker's open setup hotspot (`LG_WK7_xxxx.n019` / `WK7xxxx.n019`, gateway **`192.168.255.249`**) after a factory reset:
    ```bash
-   ./scripts/monitor-usb-adb.sh
+   ./scripts/connect-wifi-adb.sh
+   # or directly against the setup hotspot / known LAN IP:
+   ./scripts/connect-wifi-adb.sh 192.168.255.249
    ```
-2. Plug your Micro-USB data cable into the speaker and a rear motherboard USB port on your computer, then plug in DC power.
-3. Wait ~10–30 seconds for the speaker to power up, then press the physical **Mic Mute** button on top of the speaker once. If the speaker enumerates over USB, [`monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh) will automatically detect it and print its bootloader lock status.
+   *(If `adb root` succeeds on a developer/unlocked unit, `./scripts/connect-wifi-adb.sh <ip> --switch-usb` can also switch `IC502` to the bottom Micro-USB port in software.)*
+2. **Practical Option for Locked Retail Units (`:8008` Open, `:5555` Refused):** If [`connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) reports port `8008` open and port `5555` refused, your speaker is a locked retail `user` unit and **cannot install WK7 Reforged without root/bootloader unlock**. Note also that the onboard Class-D amplifier (`IC600`, TI Burr-Brown `88002`) is digital I²S-only with no analog AUX circuitry on the PCB. To use an unopened retail speaker today without cloud servers or disassembly:
+   - Provision home Wi-Fi directly over the local Google Cast Eureka API (`:8443/setup/connect_wifi` + `/setup/save_wifi`) using Paul Vipond's [`provision-wifi.py`](https://github.com/PaulVipond/wk7-speaker), restoring local Cast audio streaming (VLC, Home Assistant, `mkchromecast`), or pair via Bluetooth.
 
-#### 2. Connect via ADB over Wi-Fi (`TCP:5555`) *(No new equipment)*
-Because retail units keep the USB mux routed to the internal Wi-Fi module at boot, **Wi-Fi is active**, and stock `/system/build.prop` compiles in `persist.adb.tcp.port=5555` by default. You can use [`./scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) to automatically discover the speaker, verify its identity, check bootloader status, and optionally flip the hardware USB switch:
-* **If your speaker was NEVER factory-reset:** Even though Google Assistant is dead, Android's `wpa_supplicant` still connects automatically to your saved home Wi-Fi network at boot. Run the Wi-Fi discovery/probe script (or pass the speaker's IP from your router's DHCP table):
-  ```bash
-  ./scripts/connect-wifi-adb.sh
-  # or with a known IP:
-  ./scripts/connect-wifi-adb.sh <speaker-lan-ip>
-  ```
-* **If your speaker WAS factory-reset (most common):** Holding the bottom `RESET` button wipes saved Wi-Fi credentials, so the speaker will not join your home router automatically. Instead:
-  1. **Direct Setup Hotspot (`192.168.255.249`):** When unconfigured (or after holding the **`F` / Wi-Fi** button), `Cast.java` (`SSID_SUFFFIX = "n019"`) broadcasts an open setup Wi-Fi hotspot from the speaker itself (typically named `LG_WK7_xxxx.n019` or `WK7xxxx.n019`). Connect your computer's Wi-Fi directly to that open hotspot—where the speaker's IP is **`192.168.255.249`**—and run:
+#### B. Opened Retail PCB (`EAX67850001_VER1.7 PV`) — Hardware UART & Fastboot Probe
+
+If you already have the mainboard out on a bench and want to inspect boot logs or test whether `aboot` allows unlocking, use [`./scripts/pcb-hardware-probe.sh`](scripts/pcb-hardware-probe.sh) (works on macOS and Linux with Python 3; no extra packages needed).
+
+* **Tool Needed:** A basic **USB-to-TTL UART serial adapter supporting both `1.8V` and `3.3V` logic** (e.g., FT232RL with a `1.8V`/`3.3V` jumper). **Skip USB JTAG adapters:** although `TRST`/`TMS`/`TDO`/`SRST`/`TCK`/`TDI` pads exist below `IC300`, retail Secure Boot APQ8009 silicon blows the `JTAG_DISABLE` QFPROM fuse at the factory.
+* **Realistic Expectations:** Even once Fastboot (`18d1:d00d`) enumerates over USB, disassembly of `aboot` shows that when Qualcomm Secure Boot is enabled, `device_info` is stored in **RPMB** via TrustZone with `avb_unlock_disabled = 1` by default—meaning `fastboot oem at-unlock-vboot default_credential` will likely return `FAILED (remote: oem unlock is disabled)` on retail boards, leaving flashing blocked without an LG-signed APQ8009 Firehose programmer.
+
+**3-Step Connection Sequence (No BGA Probing, No Timing Rush):**
+Once `aboot` halts in Fastboot mode, it leaves the APQ8009 USB controller enabled indefinitely until power-cycled, so you can halt in Fastboot first and flip `IC502` afterward:
+
+1. **(Optional) Read the SoC Boot Log (`1.8V` UART strictly, 2 wires):**
+   - **Front PCB**, just above `QUALCOMM APQ8009` (`IC300`) and to the right of `P_HOLD` / `R208`, locate round gold pads **`TP514`** and **`TP515`**.
+   - Set your USB-UART adapter strictly to **`1.8V` logic** (`115200 8N1`), connect `GND` to the Micro-USB metal shield (`G101`), touch adapter **`RX`** to `TP514` or `TP515` (leave `TX` disconnected), and run:
      ```bash
-     ./scripts/connect-wifi-adb.sh 192.168.255.249
+     ./scripts/pcb-hardware-probe.sh --console
      ```
-  2. **Partial Google Home Provisioning:** When the Google Home app fails to set up a WK7 today, it usually succeeds at Step 1 (sending your home Wi-Fi SSID/password to `192.168.255.249:8008/setup/connect_wifi`) before failing at Step 2 (Google Assistant cloud linking)—meaning the speaker often joins your home Wi-Fi LAN even though the Google Home app reports an error.
-* **Flipping the Hardware USB Switch in Software (`--switch-usb`):** Once connected over Wi-Fi ADB, if `adb root` succeeds, you can flip the hardware USB switch to the bottom Micro-USB port by passing `--switch-usb` (which sends the 7-byte MICOM UART frame `\xE5\x01\xC2\x00\xA9\x01\x00` at `115200 8N1` to `/dev/ttyHSL1`):
-  ```bash
-  ./scripts/connect-wifi-adb.sh <speaker-ip> --switch-usb
-  ```
-* **Zero-Disassembly Cast Workaround (Port 8008 Open, Port 5555 Refused):** If [`connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) confirms port 8008 is open but port 5555 returns `Connection refused`, your unit is running a locked production `user` build (`ro.debuggable=0`). You can still restore local Wi-Fi music playback without opening the unit or touching ADB: use the standalone Python tool [`provision-wifi.py`](https://github.com/PaulVipond/wk7-speaker) by Paul Vipond, which provisions your home Wi-Fi directly over the local Google Cast Eureka REST API (`:8443/setup/connect_wifi` + `/setup/save_wifi`). Once on Wi-Fi, the speaker functions as a permanent local Cast target (for VLC, Home Assistant, or `mkchromecast`) with zero Google Cloud dependencies.
-
-#### 3. Connector Depth & LG Service Cable / Micro-USB OTG Adapter (`Pin 4 ID -> GND`) *`[Requires new cable]`*
-If neither Method 1 nor Method 2 works, triggering the external Micro-USB port in hardware on a retail (`MP`) board requires addressing two physical constraints of the `"SERVICE ONLY"` port (keep [`./scripts/monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh) running while testing):
-1. **Pulling Micro-USB Pin 4 (`ID` / `ANI5`) Low (`[Requires new cable / OTG adapter]`):** Every 10 ms on retail (`MP`, `0xF766 = 0`) boards, MICOM routine `0x9C03` samples ADC channel **`ANI5` (`P2.5`)**. When floating ($\ge 1.0\text{ V}$, `>= 0x0136`), it forces the USB mux to internal Wi-Fi (`0x5438`). Only when pulled low ($< 1.0\text{ V}$ to `GND`) does it switch the hardware mux to the external `"SERVICE ONLY"` Micro-USB socket (`0x542B`). Standard 4-wire USB-A-to-Micro-USB cables leave **Pin 4 (`ID`)** unconnected (floating). To pull Pin 4 low at power-on, you need an **LG Factory Service Cable** (or a **5-pin Micro-USB OTG adapter / breakout** that ties **Pin 4 `ID` to Pin 5 `GND`**).
-2. **Recessed Plastic Cutout (~3–4 mm deep, `[Requires long-tip plug or trimmed boot]`):** The metal Micro-USB receptacle behind the `"SERVICE ONLY"` sticker sits ~3–4 mm deep inside the molded plastic housing. Standard Micro-USB plugs with thick plastic/rubber shoulders bottom out against the plastic cutout before the 5 pins engage—requiring either a **long-tip (7–8 mm) Micro-USB connector** or paring ~2 mm of rubber molding off the shoulder of the plug.
-
-#### 4. The Retail Android USB Blocker (`android0/enable = 0`) & Hardware Direct Probing
-Even if you pull Pin 4 low or switch the hardware USB mux, retail units present an additional software blocker:
-* **The Software Blocker**: In stock retail `/init.usb.rc` on `user` builds (`ro.debuggable=0`), the boot sequence triggers `sys.usb.config=none`, which writes `0` to `/sys/class/android_usb/android0/enable`. This shuts off the Qualcomm APQ8009's internal USB `D+` pull-up resistor. Once Android boots, the SoC will not electrically enumerate on USB even if the mux is routed to the external socket!
-* **Fastboot / EDL Window**: The USB controller *does* enumerate before Android boots—specifically during the Fastboot phase in `aboot` or in Qualcomm Emergency Download Mode (`05c6:9008`).
-* **Direct MICOM Hardware UART Probe (For Users with a Soldering Station)**:
-  - If you open the housing, the 10-pin USB mux (`IC502`, marked `LMV`) is controlled by the onboard **Renesas RL78/G13 MICOM** (`IC700`, marked `100GEA`).
-  - Pin 51 (`P0.1 / RxD1`, 3rd pin down from the top-left on the left edge of `IC700`) connects to series resistor **`R708` / `R752`**.
-  - Connect a 3.3V USB-to-TTL UART adapter (Adapter TX $\rightarrow$ `R708`/Pin 51, Adapter GND $\rightarrow$ PCB shield), open the port at **`115200 8N1`**, and send:
-    ```bash
-    printf '\xe5\x01\xc2\x00\xa9\x01\x00' > /dev/ttyUSB0
-    ```
-    This directly instructs the MICOM to switch `IC502` to the external Micro-USB socket without waiting for button combinations or ADC checks.
+   - Plug in 19V power; the TX pad prints `Android Bootloader - UART_DM Initialized!!!` followed by kernel boot logs.
+2. **Halt `aboot` in Fastboot at Cold Power-On:**
+   - **Back PCB (easiest pad, bottom-left behind Micro-USB `G102`):** From the vertical row of 6 round factory pogo pads (`KEY`, `ID`, `D+`, `D-`, `GND`, `+19VA`), hold **`KEY` shorted to `GND`** while plugging in 19V power (~2 seconds), then release.
+   - **Fallback if `KEY` enters EDL `9008` (Front PCB, top edge of `SKhynix` eMMC `IC400`):** Plug in 19V power, wait ~1 second for `aboot` to load into RAM, then briefly short **`TP401`** (or **`R400`**) to **`GND`** for ~1 second so `aboot` fails to read `boot_a`/`boot_b` and falls back to `FASTBOOT MODE`.
+3. **Flip `IC502` to Micro-USB & Probe Fastboot (`3.3V` UART, 2 wires):**
+   - Plug a Micro-USB data cable from the speaker to your computer, set your USB-UART adapter to **`3.3V` logic**, connect `GND` to board ground, and start:
+     ```bash
+     ./scripts/pcb-hardware-probe.sh --switch-usb
+     ```
+   - Touch your UART **`TX`** probe tip to resistor **`R708`** (or `R752`, connected to Pin 51 `RxD1` at the top-left corner of `IC700` `100GEA` on the Front PCB). The script transmits `\xE5\x01\xC2\x00\xA9\x01\x00` at `115200 8N1` every `0.5s` and watches USB until `18d1:d00d` (Fastboot) or `05c6:9008` (EDL) enumerates, then automatically runs `--fastboot-probe` (`getvar all`, `oem device-info`, `flashing get_unlock_ability`, `getvar at-vboot-state`).
+   - *(Raw manual one-liner if not using the script: `stty -F /dev/ttyUSB0 115200 raw -echo && printf '\xe5\x01\xc2\x00\xa9\x01\x00' > /dev/ttyUSB0`.)*
+   - To explicitly test `aboot`'s unlock commands (`fastboot oem at-unlock-vboot default_credential`, `oem unlock`, `oem unlock-go` — erases `/data` if accepted), run:
+     ```bash
+     ./scripts/pcb-hardware-probe.sh --fastboot-probe --try-unlock
+     ```
 
 ---
 
@@ -282,7 +275,7 @@ To make the speaker boot automatically into WK7 Reforged without needing a compu
 The LG WK7 uses an internal Renesas RL78 MICOM microcontroller to switch its single physical USB controller between the external Micro-USB socket and the internal Wi-Fi/Bluetooth hub.
 
 0. **Stock Retail Units (`"SERVICE ONLY"` Port)**:
-   - On unmodified retail (`MP`) units, the MICOM defaults its hardware USB switch to the **internal Wi-Fi/BT hub** at power-on instead of the external Micro-USB port. Follow the 3 steps in [Why Retail Speakers Don't Show Up on USB by Default (And How to Connect)](#why-retail-speakers-dont-show-up-on-usb-by-default-and-how-to-connect) above (1. `Mic Mute` button toggle, 2. Wi-Fi ADB on `:5555`, or 3. `[Requires new cable]` long-tip OTG / LG Service cable).
+   - On unmodified retail (`MP`) units, the MICOM keeps `IC502` routed to the **internal Wi-Fi/BT hub** and retail Android (`ro.debuggable=0`) sets `android0/enable = 0` once booted. Check Wi-Fi first with [`./scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh), use [`provision-wifi.py`](https://github.com/PaulVipond/wk7-speaker) for zero-disassembly local Cast on locked retail speakers, or see [Why Retail Speakers Don't Show Up on USB by Default (And What Works)](#why-retail-speakers-dont-show-up-on-usb-by-default-and-what-works) for opened-PCB Fastboot/UART probing with [`./scripts/pcb-hardware-probe.sh`](scripts/pcb-hardware-probe.sh).
 1. **Use Direct Motherboard Ports**:
    - Plug the Micro-USB cable directly into a **rear motherboard USB port** on your computer.
    - Avoid front-panel ports, external USB hubs, keyboard passthroughs, and laptop docks. Front ports and hubs frequently drop packets during the initial USB negotiation handshake.
@@ -395,9 +388,9 @@ If your locked unit runs a production `user` build and refuses `adb root`, here 
   - [`exploits/02_cve_scout.py`](WK7-software-for-locked-bootloader-EXPERIMENTAL/exploits/02_cve_scout.py): Cross-references the kernel build with unpatched 2017–2018 public CVE candidates.
 - Technical analysis: [`docs/KERNEL.md`](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/KERNEL.md)
 
-#### Route 3: Internal Hardware UART Serial Consoles
-- **Qualcomm APQ8009 SoC Console**: The kernel command line configures `console=ttyHSL0,115200,n8` on Qualcomm BLSP UART (`0x78AF000`). Test pads exist on the mainboard near the SoC/eMMC shield.
-- **Renesas RL78 MICOM Control Bus**: The MICOM (`IC700`, `100GEA`) operates at `115200 8N1`. Tapping Pin 51 (`P0.1 / RxD1`) via series resistor `R708`/`R752` with a 3.3V USB-to-TTL adapter allows sending the frame `\xE5\x01\xC2\x00\xA9\x01\x00` to control the hardware USB mux (`IC502` `LMV`) directly.
+#### Route 3: Internal Hardware UART Serial Consoles & Fastboot Probe (`pcb-hardware-probe.sh`)
+- **Qualcomm APQ8009 SoC Console (`1.8V` logic strictly)**: `aboot` and the kernel configure `ttyHSL0` (`BLSP1_UART2` at `0x078af000`) at `115200 8N1` on outer-layer pads **`TP514` / `TP515`** (Front PCB above `IC300`, right of `P_HOLD`/`R208`). Read logs with `./scripts/pcb-hardware-probe.sh --console`.
+- **Fastboot Cold-Boot Halt & MICOM USB Switch (`3.3V` logic)**: Halting `aboot` in Fastboot (Back PCB **`KEY` $\rightarrow$ `GND`** at power-on, or delayed ~1 s Front PCB **`TP401`/`R400` $\rightarrow$ `GND`** above eMMC `IC400`) keeps the USB controller enabled indefinitely. Running `./scripts/pcb-hardware-probe.sh --switch-usb` on **`R708`** (Pin 51 `RxD1` at top-left of `IC700` `100GEA`) flips `IC502` (`LHV`/`LMV`) to the external Micro-USB port and queries `oem device-info` / RPMB `avb-unlock-disabled`.
 
 ---
 
@@ -453,7 +446,8 @@ Practical options:
 ├── README.md                                   # Project overview and hardware reference
 ├── scripts/                                    # Cross-platform connection & diagnostic helpers
 │   ├── monitor-usb-adb.sh                      # Live USB bus, ADB, and Fastboot connection monitor
-│   └── connect-wifi-adb.sh                     # Wi-Fi discovery (Setup AP / LAN), ADB probe & USB switcher
+│   ├── connect-wifi-adb.sh                     # Wi-Fi discovery (Setup AP / LAN), ADB probe & USB switcher
+│   └── pcb-hardware-probe.sh                   # Opened-PCB 1.8V UART console, 3.3V R708 USB switcher & Fastboot probe
 ├── web-assets/                                 # Documentation imagery and visual assets
 │   ├── timeline.png                            # Historical timeline infographic
 │   ├── timeline.svg                            # Vector source for timeline
@@ -504,13 +498,11 @@ Practical options:
 
 ## Changelog (v1.5)
 
-* **Retail (`MP`) vs. Prototype (`DV`) USB Mux Root-Cause Fix ([Issue #4](https://github.com/tomkubik/WK7-reforged/issues/4))**: Disassembled the Renesas RL78 MICOM firmware (`M17111305_DV_USB_Mode.hex`) and documented why retail (`MP`/`PV`) units keep the `"SERVICE ONLY"` Micro-USB port disconnected at power-on (routing the single USB controller to the internal Wi-Fi/BT hub instead), along with 3 ordered connection methods:
-  1. Physical **`Mic Mute` button toggle** (`P2.7`, routine `0x5335`) after boot *(no new equipment)*.
-  2. **ADB over Wi-Fi (`TCP:5555`)** via home LAN or the factory-reset Setup Hotspot (`192.168.255.249` on `LG_WK7_xxxx.n019`) + software USB switch via MICOM UART command `0xC2 0x00 0x00` *(no new equipment)*.
-  3. **Micro-USB Pin 4 (`ID` / `ANI5`) sense (`0x9C03`) & recessed connector depth** using an LG Factory Service cable / OTG adapter and long-tip plug *(`[Requires new cable]`)*.
-* **New Connection & Monitoring Scripts ([`scripts/`](scripts/))**:
-  - [`scripts/monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh): Live macOS/Linux USB bus, ADB, and Fastboot monitor that auto-detects the speaker and prints bootloader unlock state.
+* **Retail (`MP`) vs. Prototype (`DV`) Hardware & Bootloader Findings ([Issue #4](https://github.com/tomkubik/WK7-reforged/issues/4), [Issue #5](https://github.com/tomkubik/WK7-reforged/issues/5))**: Documented why retail (`MP`/`PV`) units keep the `"SERVICE ONLY"` Micro-USB port disconnected (`IC502` routed to internal Wi-Fi) and ship locked `user` builds (`ro.debuggable=0`, `android0/enable = 0`), along with zero-disassembly local Cast provisioning (`provision-wifi.py`) and the 3-step opened-PCB UART/Fastboot probe sequence (`TP514`/`TP515`, `KEY`/`TP401`, `R708`, and `aboot` RPMB `avb_unlock_disabled` check).
+* **New Connection & Hardware Probe Scripts ([`scripts/`](scripts/))**:
+  - [`scripts/monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh): Live macOS/Linux USB bus, ADB, and Fastboot monitor that auto-detects the speaker and prints bootloader / `avb-unlock-disabled` state.
   - [`scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh): Auto-discovers the speaker on the Setup Hotspot (`192.168.255.249`) or local LAN (`:8008`), probes Wi-Fi ADB (`:5555`) with `ro.product.model` verification, diagnoses locked `user` builds, and supports `--switch-usb`.
+  - [`scripts/pcb-hardware-probe.sh`](scripts/pcb-hardware-probe.sh): Cross-platform (macOS/Linux) helper for opened retail PCBs (`EAX67850001_VER1.7 PV`) supporting `--console` (`1.8V` `ttyHSL0` reader), `--switch-usb` (`3.3V` MICOM `0xC2` sender on `R708` + live USB watcher), and `--fastboot-probe` (`oem device-info` / RPMB lock check).
 * **Expanded Documentation**: Added the hardware connection & cable reference table, the unlocked-bootloader deployment walkthrough, and detailed experimental locked-bootloader documentation. See [`CHANGELOG.md`](CHANGELOG.md) for full details.
 
 <p align="center">
