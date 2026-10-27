@@ -83,16 +83,29 @@ Because retail units keep the USB mux routed to the internal Wi-Fi module at boo
      ./scripts/connect-wifi-adb.sh 192.168.255.249
      ```
   2. **Partial Google Home Provisioning:** When the Google Home app fails to set up a WK7 today, it usually succeeds at Step 1 (sending your home Wi-Fi SSID/password to `192.168.255.249:8008/setup/connect_wifi`) before failing at Step 2 (Google Assistant cloud linking)—meaning the speaker often joins your home Wi-Fi LAN even though the Google Home app reports an error.
-* **Flipping the Hardware USB Switch in Software (`--switch-usb`):** Once connected over Wi-Fi ADB, if `adb root` succeeds, you can flip the hardware USB switch to the bottom Micro-USB port by passing `--switch-usb` (which sends MICOM UART command `0xC2 0x00 0x00` to `/dev/ttyHSL1`):
+* **Flipping the Hardware USB Switch in Software (`--switch-usb`):** Once connected over Wi-Fi ADB, if `adb root` succeeds, you can flip the hardware USB switch to the bottom Micro-USB port by passing `--switch-usb` (which sends the 7-byte MICOM UART frame `\xE5\x01\xC2\x00\xA9\x01\x00` at `115200 8N1` to `/dev/ttyHSL1`):
   ```bash
   ./scripts/connect-wifi-adb.sh <speaker-ip> --switch-usb
   ```
-  *(Note: [`connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) also checks Google Cast port `8008` first—so if port `8008` responds on Wi-Fi while port `5555` returns `Connection refused`, the script will confirm that your retail unit is online on Wi-Fi but running a locked consumer `user` build where `adbd` is disabled in Android init.)*
+* **Zero-Disassembly Cast Workaround (Port 8008 Open, Port 5555 Refused):** If [`connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) confirms port 8008 is open but port 5555 returns `Connection refused`, your unit is running a locked production `user` build (`ro.debuggable=0`). You can still restore local Wi-Fi music playback without opening the unit or touching ADB: use the standalone Python tool [`provision-wifi.py`](https://github.com/PaulVipond/wk7-speaker) by Paul Vipond, which provisions your home Wi-Fi directly over the local Google Cast Eureka REST API (`:8443/setup/connect_wifi` + `/setup/save_wifi`). Once on Wi-Fi, the speaker functions as a permanent local Cast target (for VLC, Home Assistant, or `mkchromecast`) with zero Google Cloud dependencies.
 
 #### 3. Connector Depth & LG Service Cable / Micro-USB OTG Adapter (`Pin 4 ID -> GND`) *`[Requires new cable]`*
 If neither Method 1 nor Method 2 works, triggering the external Micro-USB port in hardware on a retail (`MP`) board requires addressing two physical constraints of the `"SERVICE ONLY"` port (keep [`./scripts/monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh) running while testing):
 1. **Pulling Micro-USB Pin 4 (`ID` / `ANI5`) Low (`[Requires new cable / OTG adapter]`):** Every 10 ms on retail (`MP`, `0xF766 = 0`) boards, MICOM routine `0x9C03` samples ADC channel **`ANI5` (`P2.5`)**. When floating ($\ge 1.0\text{ V}$, `>= 0x0136`), it forces the USB mux to internal Wi-Fi (`0x5438`). Only when pulled low ($< 1.0\text{ V}$ to `GND`) does it switch the hardware mux to the external `"SERVICE ONLY"` Micro-USB socket (`0x542B`). Standard 4-wire USB-A-to-Micro-USB cables leave **Pin 4 (`ID`)** unconnected (floating). To pull Pin 4 low at power-on, you need an **LG Factory Service Cable** (or a **5-pin Micro-USB OTG adapter / breakout** that ties **Pin 4 `ID` to Pin 5 `GND`**).
 2. **Recessed Plastic Cutout (~3–4 mm deep, `[Requires long-tip plug or trimmed boot]`):** The metal Micro-USB receptacle behind the `"SERVICE ONLY"` sticker sits ~3–4 mm deep inside the molded plastic housing. Standard Micro-USB plugs with thick plastic/rubber shoulders bottom out against the plastic cutout before the 5 pins engage—requiring either a **long-tip (7–8 mm) Micro-USB connector** or paring ~2 mm of rubber molding off the shoulder of the plug.
+
+#### 4. The Retail Android USB Blocker (`android0/enable = 0`) & Hardware Direct Probing
+Even if you pull Pin 4 low or switch the hardware USB mux, retail units present an additional software blocker:
+* **The Software Blocker**: In stock retail `/init.usb.rc` on `user` builds (`ro.debuggable=0`), the boot sequence triggers `sys.usb.config=none`, which writes `0` to `/sys/class/android_usb/android0/enable`. This shuts off the Qualcomm APQ8009's internal USB `D+` pull-up resistor. Once Android boots, the SoC will not electrically enumerate on USB even if the mux is routed to the external socket!
+* **Fastboot / EDL Window**: The USB controller *does* enumerate before Android boots—specifically during the Fastboot phase in `aboot` or in Qualcomm Emergency Download Mode (`05c6:9008`).
+* **Direct MICOM Hardware UART Probe (For Users with a Soldering Station)**:
+  - If you open the housing, the 10-pin USB mux (`IC502`, marked `LMV`) is controlled by the onboard **Renesas RL78/G13 MICOM** (`IC700`, marked `100GEA`).
+  - Pin 51 (`P0.1 / RxD1`, 3rd pin down from the top-left on the left edge of `IC700`) connects to series resistor **`R708` / `R752`**.
+  - Connect a 3.3V USB-to-TTL UART adapter (Adapter TX $\rightarrow$ `R708`/Pin 51, Adapter GND $\rightarrow$ PCB shield), open the port at **`115200 8N1`**, and send:
+    ```bash
+    printf '\xe5\x01\xc2\x00\xa9\x01\x00' > /dev/ttyUSB0
+    ```
+    This directly instructs the MICOM to switch `IC502` to the external Micro-USB socket without waiting for button combinations or ADC checks.
 
 ---
 
@@ -362,11 +375,16 @@ cd WK7-software-for-locked-bootloader-EXPERIMENTAL
 
 ### Potential Technical Routes If `adb root` Is Blocked
 
-If your locked unit runs a production `user` build and refuses `adb root`, the repository documents four potential exploration vectors:
+If your locked unit runs a production `user` build and refuses `adb root`, here are the technical exploration vectors available:
+
+#### Route 0: Zero-Disassembly Local Cast Workaround (Recommended for Daily Music)
+- **Mechanism**: The local Google Cast Eureka setup service (`:8008` / `:8443`) remains active on Wi-Fi even when ADB is disabled and Google Assistant cloud servers are shut down.
+- **Tool**: Use [`PaulVipond/wk7-speaker`](https://github.com/PaulVipond/wk7-speaker) (`provision-wifi.py`) to provision your home Wi-Fi over the speaker's open setup hotspot.
+- **Outcome**: The speaker joins your LAN and acts as a local Chromecast Audio target for streaming from VLC, Home Assistant, and `mkchromecast` with no soldering and no firmware flashing required.
 
 #### Route 1: Qualcomm EDL Mode (9008) + Firehose Loader
 - **Mechanism**: Emergency Download Mode (`05c6:9008`) is implemented in SoC boot ROM *below* `aboot` (the Android bootloader). It bypasses all Android-level locks.
-- **Entry**: Enter via [`04_edl_enter.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/04_edl_enter.sh) or hardware test pad shorts.
+- **Entry**: Enter via [`04_edl_enter.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/04_edl_enter.sh) or hardware test pad shorts (`FORCE_USB_BOOT`).
 - **The Blocker**: Flashing via EDL requires an **LG-signed SDM212 firehose programmer ELF** (`prog_firehose_lge_*.mbn`). Unsigned loaders will be rejected by the SoC's hardware root of trust.
 - Technical analysis: [`docs/EDL.md`](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/EDL.md)
 
@@ -377,8 +395,9 @@ If your locked unit runs a production `user` build and refuses `adb root`, the r
   - [`exploits/02_cve_scout.py`](WK7-software-for-locked-bootloader-EXPERIMENTAL/exploits/02_cve_scout.py): Cross-references the kernel build with unpatched 2017–2018 public CVE candidates.
 - Technical analysis: [`docs/KERNEL.md`](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/KERNEL.md)
 
-#### Route 3: Internal Hardware UART Serial Console
-- The kernel command line reveals an active serial console at `console=ttyHSL0,115200,n8` on Qualcomm BLSP UART (`0x78AF000`). Test pads exist on the mainboard inside the housing.
+#### Route 3: Internal Hardware UART Serial Consoles
+- **Qualcomm APQ8009 SoC Console**: The kernel command line configures `console=ttyHSL0,115200,n8` on Qualcomm BLSP UART (`0x78AF000`). Test pads exist on the mainboard near the SoC/eMMC shield.
+- **Renesas RL78 MICOM Control Bus**: The MICOM (`IC700`, `100GEA`) operates at `115200 8N1`. Tapping Pin 51 (`P0.1 / RxD1`) via series resistor `R708`/`R752` with a 3.3V USB-to-TTL adapter allows sending the frame `\xE5\x01\xC2\x00\xA9\x01\x00` to control the hardware USB mux (`IC502` `LMV`) directly.
 
 ---
 

@@ -30,8 +30,8 @@ for arg in "$@"; do
       echo "  <speaker-ip>   IP address of the WK7 speaker (e.g. 192.168.255.249 on Setup Hotspot,"
       echo "                 or your home router DHCP IP). If omitted, checks 192.168.255.249 and"
       echo "                 scans your local subnet."
-      echo "  --switch-usb   If 'adb root' succeeds, send MICOM UART command 0xC2 0x00 0x00"
-      echo "                 to switch the hardware USB mux to the bottom Micro-USB port."
+      echo "  --switch-usb   If 'adb root' succeeds, send MICOM UART command to switch"
+      echo "                 the hardware USB mux to the bottom Micro-USB port (115200 8N1)."
       exit 0
       ;;
     *) TARGET_IP="$arg" ;;
@@ -76,9 +76,16 @@ probe_ip() {
       echo -e "${YELLOW}⚠ DIAGNOSTIC RESULT:${RESET}"
       echo "  The WK7 speaker IS reachable on Wi-Fi at ${ip} (port 8008 is open),"
       echo "  but TCP port 5555 returned Connection Refused / Timed Out."
-      echo "  -> This means your retail unit is running a locked consumer 'user' build"
-      echo "     (ro.debuggable=0) where Android init disables adbd."
-      echo "  -> See the 'Locked-Bootloader Units' section in README.md."
+      echo "  -> This confirms your retail unit is running a locked consumer 'user' build"
+      echo "     (ro.debuggable=0) where stock Android init leaves adbd disabled."
+      echo ""
+      echo -e "${GREEN}  ✓ Zero-Disassembly Local Cast Workaround:${RESET}"
+      echo "     Because port 8008 is responsive, you can provision Wi-Fi over the local"
+      echo "     Cast REST API without ADB using provision-wifi.py from PaulVipond/wk7-speaker:"
+      echo "     https://github.com/PaulVipond/wk7-speaker"
+      echo "     This restores local Cast audio streaming (VLC, Home Assistant, mkchromecast)"
+      echo "     without opening the speaker."
+      echo "  -> For hardware UART and bootloader research, see README.md."
       return 2
     fi
     return 1
@@ -132,9 +139,10 @@ probe_ip() {
     local uid
     uid="$(adb -s "$serial" shell id -u 2>/dev/null | tr -d '\r')"
     if [[ "$uid" == "0" ]]; then
-      echo -e "${GREEN}  ✓ Root shell active (uid=0). Sending MICOM UART command 0xC2 0x00 0x00...${RESET}"
+      echo -e "${GREEN}  ✓ Root shell active (uid=0). Sending MICOM UART switch command (115200 8N1)...${RESET}"
       echo "    (Note: Switching the USB mux to external Micro-USB will disconnect internal Wi-Fi!)"
-      adb -s "$serial" shell "stop; pkill -f com.lge.smartspeaker; stty -F /dev/ttyHSL1 19200 raw -echo; printf '\xf5\xc2\x00\x01\x00\x3c\xfa' > /dev/ttyHSL1" 2>/dev/null || true
+      # Protocol: Header 0xE5, TID 0x01, Cmd 0xC2 0x00, Checksum 0xA9, Len 0x01, State 0x00 (Micro-USB socket)
+      adb -s "$serial" shell "stop; pkill -f com.lge.smartspeaker; stty -F /dev/ttyHSL1 115200 raw -echo -ixon -ixoff cs8 -cstopb -parenb; printf '\xe5\x01\xc2\x00\xa9\x01\x00' > /dev/ttyHSL1" 2>/dev/null || true
       echo -e "${GREEN}  ✓ Command sent. Check your USB port with './scripts/monitor-usb-adb.sh'.${RESET}"
     else
       echo -e "${RED}  ✗ 'adb root' did not grant uid=0 (current uid=${uid:-unknown}). Cannot write to /dev/ttyHSL1.${RESET}"

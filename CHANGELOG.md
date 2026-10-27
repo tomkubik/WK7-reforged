@@ -11,7 +11,11 @@
 * **New Diagnostic & Monitoring Helper Scripts (`scripts/`)**:
   - Added [`scripts/monitor-usb-adb.sh`](scripts/monitor-usb-adb.sh): Live cross-platform (macOS + Linux) USB bus, ADB, and Fastboot monitor that auto-detects the speaker and queries bootloader unlock state.
   - Added [`scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh): Auto-discovers the speaker on the Setup Hotspot (`192.168.255.249`) or local LAN (`:8008`), probes Wi-Fi ADB (`:5555`) with `ro.product.model` verification, diagnoses locked `user` builds, and supports `--switch-usb` to flip the MICOM USB switch in software.
-* **Expanded Documentation**:
+* **Retail Android Software Blocker & Hardware Probing Research ([Issue #4](https://github.com/tomkubik/WK7-reforged/issues/4), [Issue #5](https://github.com/tomkubik/WK7-reforged/issues/5))**:
+  - Documented why retail `user` builds shut off the USB D+ pull-up (`android0/enable = 0`), preventing USB enumeration after Android boot even when the hardware mux is switched.
+  - Documented zero-disassembly local Cast Wi-Fi provisioning workaround via [`PaulVipond/wk7-speaker`](https://github.com/PaulVipond/wk7-speaker) (`provision-wifi.py`) for retail units where port 5555 is closed.
+  - Documented direct hardware UART control points for the onboard Renesas RL78/G13 MICOM (`IC700` Pin 51 / `R708` at `115200 8N1`) to control the analog USB switch (`IC502` `LMV`).
+  - Corrected MICOM UART switch command in [`scripts/connect-wifi-adb.sh`](scripts/connect-wifi-adb.sh) to `115200 8N1` and frame format `\xE5\x01\xC2\x00\xA9\x01\x00` matching `wk7-usbroute`.
   - Added the **Hardware Connection & Required Cables** reference table in `README.md`.
   - Added the complete high-level installation walkthrough and technical links for **Unlocked-Bootloader Units**.
   - Ported comprehensive technical pointers, `/data` architecture notes, and script references for **Locked-Bootloader Units (Experimental)** into the main `README.md`.
