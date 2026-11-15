@@ -435,6 +435,7 @@ Practical options:
 * **[docs/locked.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/locked.md)**: In-depth technical breakdown of what is verified vs. inferred, why `/data` works, and the `adb root` blocker.
 * **[docs/EDL.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/EDL.md)**: Emergency Download Mode (9008) deep dive and vendor-signed Firehose loader requirements.
 * **[docs/KERNEL.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/KERNEL.md)**: Privilege escalation triage on Linux 3.10.49 and CVE scouting analysis.
+* **[docs/unauthenticated-api.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/unauthenticated-api.md)**: The unauthenticated local Cast/setup API (`:8443/setup/*`) on locked retail units and what it enables.
 
 ---
 
