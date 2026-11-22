@@ -83,10 +83,12 @@ attempt would need.
 ## Documentation
 
 - [docs/locked.md](docs/locked.md) — the locked-device path, what is verified, the blocking unknown
+- [docs/findings.md](docs/findings.md) — verified Wi-Fi, Cast, and BLE GATT access attempts on a locked retail unit (what works vs. what does not)
 - [docs/EDL.md](docs/EDL.md) — EDL 9008 and the firehose loader requirement
 - [docs/KERNEL.md](docs/KERNEL.md) — escalation triage and CVE shortlist
 - [docs/unauthenticated-api.md](docs/unauthenticated-api.md) — the unauthenticated local Cast/setup API found on locked retail units
 - [lib/common.sh](lib/common.sh) — device constants and the verified partition table
+- [../README.md](../README.md) — top-level project README and opened-PCB hardware probe guide
 
 ## Backups
 

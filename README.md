@@ -433,6 +433,7 @@ Practical options:
 * **[WK7-software-for-locked-bootloader-EXPERIMENTAL/README.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/README.md)**: Overview of experimental scripts, safety boundaries, and the `/data` installation path.
 * **[WK7-software-for-locked-bootloader-EXPERIMENTAL/AGENTS.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/AGENTS.md)**: Operating rules for locked units, confirmed hardware facts, and test procedures.
 * **[docs/locked.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/locked.md)**: In-depth technical breakdown of what is verified vs. inferred, why `/data` works, and the `adb root` blocker.
+* **[docs/findings.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/findings.md)**: Verified Wi-Fi, Cast (`:8008`/`:8009`/`:8443`), and BLE GATT (`0xfea0`) access attempts on a locked retail unit — what works, what fails, and why wireless routes do not yield ADB/root.
 * **[docs/EDL.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/EDL.md)**: Emergency Download Mode (9008) deep dive and vendor-signed Firehose loader requirements.
 * **[docs/KERNEL.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/KERNEL.md)**: Privilege escalation triage on Linux 3.10.49 and CVE scouting analysis.
 * **[docs/unauthenticated-api.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/unauthenticated-api.md)**: The unauthenticated local Cast/setup API (`:8443/setup/*`) on locked retail units and what it enables.
@@ -466,6 +467,8 @@ Practical options:
 │   ├── lib/common.sh                            # Device constants + verified partition table
 │   ├── docs/
 │   │   ├── locked.md                            # ⚠ The locked-device path; the blocking unknown
+│   │   ├── findings.md                          # Verified Wi-Fi, Cast & BLE GATT probe findings
+│   │   ├── unauthenticated-api.md               # Unauthenticated local Cast/setup API (:8443)
 │   │   ├── EDL.md                               # EDL 9008 and the firehose requirement
 │   │   └── KERNEL.md                            # Escalation triage + CVE shortlist
 │   └── exploits/

@@ -44,18 +44,27 @@ From the one unlocked unit:
 - 44 partitions, A/B
 - `console=ttyHSL0,115200,n8` — a UART console exists but needs the housing open
 
+From a **locked retail (`MP`) unit** (`LG-WK7_0447` / `LG-WK7_4824`, `NIT1.190501.001`, 2026-11 — see `docs/findings.md` and `docs/unauthenticated-api.md`):
+
+- Wi-Fi ADB (`:5555`) is **refused** in both setup-AP (`192.168.255.249`) and LAN modes; all other open ports (`53`, `8008`, `8009`, `8443`, `9000`, `9741`, `10001`) fail the ADB handshake (`offline`).
+- The local Cast/setup API (`:8008` / `:8443`, May 2019 build, pre-`cast-local-authorization-token`) is **unauthenticated**: `eureka_info`, `scan_wifi`, `scan_results`, `accept_tos`, `connect_wifi` (RSA PKCS#1 v1.5 encrypted PSK), `forget_wifi` (in setup mode), and `reboot` (`{"params":"now"}`) work without a token.
+- `/setup/reboot` rejects `bootloader`, `recovery`, and `edl` with HTTP `400`.
+- Cast v2 `:8009` `GET_APP_AVAILABILITY` returns `APP_UNAVAILABLE` and `LAUNCH` returns `NOT_FOUND` on unprovisioned units (`CC1AD845` + 23 other IDs).
+- BLE GATT (`0000fea0-...`) is only advertised in setup mode (`setup_state: 10`, rotating random MAC), requires no pairing/auth, mirrors Wi-Fi provisioning (including gzipped scan results and `197c6160` RSA key / `0328fe40` Wi-Fi config), and exposes **no** ADB or debug toggle.
+
 ## State: what works, what does not
 
-WORKS: device probing, partition backup/restore, `dd`-based flashing via an adb
-root shell, fastboot inspection, escalation triage, the `/data` installer.
+WORKS:
+- On an unlocked/`userdebug` unit: device probing, partition backup/restore, `dd`-based flashing via an adb root shell, fastboot inspection, escalation triage, the `/data` installer.
+- On a locked retail unit (wireless, verified 2026-11 — see `docs/findings.md`): unauthenticated device recon, Wi-Fi provisioning (`/setup/connect_wifi` or BLE `0xfea0`), and normal reboot (`{"params":"now"}`).
 
 DOES NOT WORK / UNVERIFIED:
-- Unlocking a locked unit. The Android Things Console that issued LG's unlock
-  credentials was permanently deleted on 2022-01-05.
-- EDL flashing. Requires an LG-signed SDM212 firehose loader; none included and
-  one cannot be synthesised.
+- Wi-Fi ADB (`:5555`), BLE debug/ADB, Cast `LAUNCH` RCE (`NOT_FOUND` on empty app registry), and `/setup/reboot` to `bootloader`/`recovery`/`edl` (`400`) on locked retail units (`docs/findings.md`).
+- Unlocking a locked unit. The Android Things Console that issued LG's unlock credentials was permanently deleted on 2022-01-05; retail `device_info` is RPMB-backed with `avb_unlock_disabled=1`.
+- EDL flashing. Requires an LG-signed SDM212 firehose loader; none included and one cannot be synthesised.
 - Kernel exploit. Intentionally not shipped.
 - Auto-start at power-on while locked. Structurally impossible.
+- Interactive root shell on `1.8V` UART (`TP514`/`TP515`) on retail `user` builds: unverified on physical hardware (requires opening the housing).
 
 ## Conventions
 
