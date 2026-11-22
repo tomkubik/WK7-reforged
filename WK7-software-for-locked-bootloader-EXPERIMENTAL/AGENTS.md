@@ -9,13 +9,6 @@ Diagnostic and flashing tooling for WK7 units whose bootloader is **locked**.
 Parallel to the main project; nothing in the unlocked path is modified or
 duplicated here.
 
-## Read this first
-
-**Nothing here has been tested on a locked device.** All hardware observations
-come from one already-unlocked unit (serial `2132083b`, 2026-10-03). The
-locked-device claims are inference resting on one unconfirmed assumption:
-that `adb root` is permitted while locked. See `docs/locked.md`.
-
 ## Rules you must not break
 
 1. **Never claim a locked-device result that was not observed.** The single most
@@ -28,14 +21,9 @@ that `adb root` is permitted while locked. See `docs/locked.md`.
 3. **Never remove the device-identity check.** Another device on the network
    will answer adb on 5555 — a real Google Home did during testing. Verify
    `ro.product.model` before writing.
-4. **Do not ship a kernel exploit.** `exploits/` is a triage pipeline and a CVE
-   shortlist. Do not add an unverified privilege-escalation PoC: it cannot be
-   validated against this build, and a bad one can wedge consumer hardware.
-   `01_generic_escalation.sh` deliberately stops when preconditions are unmet.
-   Keep that behaviour.
-5. **Do not touch early-boot partitions.** `sbl1_*`, `tz_*`, `rpm_*` are
+4. **Do not touch early-boot partitions.** `sbl1_*`, `tz_*`, `rpm_*` are
    effectively unrecoverable if written wrongly on a locked device.
-6. **Back up before writing.** `01_backup.sh` first, always.
+5. **Back up before writing.** `01_backup.sh` first, always.
 
 ## Verified facts
 
